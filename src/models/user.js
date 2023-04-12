@@ -1,11 +1,13 @@
+// Import required packages
 const mongoose = require('mongoose')
 const validator = require('validator')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 
+// Load environment variables
 require('dotenv').config()
 
-
+// Define the User schema
 const userSchema = new mongoose.Schema({
     fullname: {
         type: String, 
@@ -32,9 +34,10 @@ const userSchema = new mongoose.Schema({
         trim: true,
         validate(value) {
             if (value.toLowerCase().includes('password')) {
-                throw new Error('Password cannot contain "password"')
+                throw new Error('Password cannot contain "password"');
             }
-        }
+        },
+        select: false // Exclude the password field when querying users
     },
     gender: {
       type: String,
@@ -76,6 +79,14 @@ const userSchema = new mongoose.Schema({
         required: false,
         default: true
     },
+    emailConfirmToken: {
+        type: String,
+        required: false
+    },
+    passwordResetToken: {
+        type: String,
+        required: false
+    },
     tokens: [{
         token: {
             type: String,
@@ -86,21 +97,21 @@ const userSchema = new mongoose.Schema({
     timestamps: true
 })
 
+// Create a text index for the fullname field
 userSchema.index({ fullname: 'text' });
 
-// this generates the token anytime it is called
-userSchema.methods.generateAuthToken = async function () {
-    const user = this
-    const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET_KEY)
+// Method to generate a new authentication token
+// userSchema.methods.generateAuthToken = async function () {
+//     const user = this
+//     const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET_KEY)
 
-    user.tokens = user.tokens.concat({ token })
-    await user.save()
+//     user.tokens = user.tokens.concat({ token })
+//     await user.save()
 
-    return token
-}
+//     return token
+// }
 
-// prevents the token or password from showing when the 
-// user logs in or trying to get their information
+// Custom toJSON method to remove sensitive fields from the output
 userSchema.methods.toJSON = function () {
     const user = this
     const userObject = user.toObject()
@@ -111,26 +122,24 @@ userSchema.methods.toJSON = function () {
     return userObject
 }
 
+// Static method to find a user by email and password
+// userSchema.statics.findByCredentials = async (email, password) => {
+//     const user = await User.findOne({ email })
 
-// handles logging in and checking if the email and password is same
-userSchema.statics.findByCredentials = async (email, password) => {
-    const user = await User.findOne({ email })
+//     if (!user) {
+//         throw new Error('Unable to login')
+//     }
 
-    if (!user) {
-        throw new Error('Unable to login')
-    }
+//     const isMatch = await bcrypt.compare(password, user.password)
 
-    const isMatch = await bcrypt.compare(password, user.password)
+//     if (!isMatch) {
+//         throw new Error('Unable to login')
+//     }
 
-    if (!isMatch) {
-        throw new Error('Unable to login')
-    }
+//     return user
+// }
 
-    return user
-}
-
-
-// Hash plain text passwords
+// Middleware to hash the password before saving the user
 userSchema.pre('save', async function (next) {
     const user = this
 
@@ -141,6 +150,16 @@ userSchema.pre('save', async function (next) {
     next()
 })
 
-const User = mongoose.model('User', userSchema)
+// Transformation function to remove sensitive fields
+const userTransformation = function (doc, ret, options) {
+    delete ret.password;
+    delete ret.tokens;
+    return ret;
+}
 
-module.exports = User
+userSchema.set('toObject', { transform: userTransformation });
+userSchema.set('toJSON', { transform: userTransformation });
+
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;

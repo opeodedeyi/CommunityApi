@@ -1,16 +1,17 @@
-const express = require('express')
-const User = require('../models/user')
-const { auth } = require('../middleware/auth')
-const router = new express.Router()
-const jwt = require('jsonwebtoken')
-require('dotenv').config()
+// Import required modules
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { OAuth2Client } = require('google-auth-library');
+const { s3 } = require('../middleware/aws');
 
-const {OAuth2Client} = require('google-auth-library')
-const { sendConfirmationEmail, sendPasswordResetEmail } = require('../services/sendmail')
-const { s3 } = require('../middleware/aws')
-const bcrypt = require('bcryptjs')
+// Import services
+const userService = require('../services/userService');
+const authService = require('../services/authService');
+const emailService = require('../services/emailService');
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
+// Create a router
+const router = new express.Router();
 
 
 // Lookaam API homepage -- (Tested)
@@ -23,207 +24,223 @@ router.get('', async (req, res) => {
 })
 
 
-// Signup a normal user -- (Tested)(mail)
+// Signup a normal user
 router.post('/signup', async (req, res) => {
-    const user = new User(req.body)
-    const userExists = await User.findOne({ email: req.body.email })
-
-    if (userExists) { // checks if user already exists
-        return res.status(400).send({ "message": "user already exists" })
-    }
-
+    // Use the userService to create a new user
     try {
-        await user.save()
-        sendConfirmationEmail(user) // send verification email to the user
-        const token = await user.generateAuthToken() // sends a token to the user
-        res.status(201).send({ user, token, "message": "user created" })
+        const newUser = await userService.createUser(req.body);
+        // Send a confirmation email using the emailService
+        emailService.sendConfirmationEmail(newUser);
+        // Generate an authentication token using authService
+        const token = await authService.generateAuthToken(newUser);
+        res.status(201).send({ newUser, token, message: 'User created' });
     } catch (e) {
-        res.status(401).send({ "message": "Something went wrong" })
+        res.status(401).send({ message: 'Something went wrong' });
     }
-})
+});
 
 
-// Login or Signup a user using Google -- (Tested)
-router.post('/googlelogin', async (req, res) => {
+// Route for Google OAuth
+router.post('/google-auth', async (req, res) => {
     try {
-        const { tokenId } = req.body
-        client.verifyIdToken({ idToken: tokenId, audience: process.env.GOOGLE_CLIENT_ID })
-        .then( async (response) => {
-            const {email_verified, name, email, picture} = response.payload;
-            if (email_verified) { // Check if user on google is verified
-                const user = await User.findOne({email}) 
-                if (user) { // Check if user exists on our platform
-                    if (user.isEmailConfirmed==false) {
-                        user.isEmailConfirmed=true // Set email as confirmed
-                        await user.save()
-                    }
-                    const token = await user.generateAuthToken() // Generate token that is sent in next line
-                    res.status(200).send({ user, token })
-                } else {
-                    let password = email+process.env.ADMIN_SECRET_KEY // Generate random password for the google user
-                    let newUser = new User({ email, fullname: name, password, profilePhoto: {location: picture}, isEmailConfirmed: true }) // Create user
-                    await newUser.save()
-                    const token = await newUser.generateAuthToken() // Generate token that is sent in next line
-                    res.status(201).send({ "user": newUser , token })
-                }
-            }
-        }).catch(e => { // you need to catch the error for promise 
-            res.status(400).send({ "message": "Something went wrong" })
-        })
-    } catch (e) {
-        res.status(400).send({ "message": "Something went wrong" })
-    }
-})
+        // Verify the Google token
+        const payload = await verifyGoogleToken(req.body.idToken);
 
+        // Extract user information from the payload
+        const { email, given_name, family_name, picture } = payload;
 
-// Request new verification email -- (Tested)(mail)
-router.post('/requestverification', async (req, res) => {
-    const user = await User.findOne({ email: req.body.email })
+        // Check if the user already exists in the database
+        let user = await userService.getUserByEmail(email);
 
-    if (!user) {
-        return res.status(401).send({ "message": "there is no such user, please signup" })
-    } if (user.isEmailConfirmed) {
-        return res.status(401).send({ "message": "Email is already verified" })
-    }
+        if (!user) {
+            // If the user doesn't exist, create a new user with the information from the payload
+            const newUser = {
+                email,
+                    fullName: `${given_name} ${family_name}`,
+                    password: bcrypt.hashSync(process.env.GOOGLE_USER_DEFAULT_PASSWORD, 8),
+                    profilePhoto: {
+                        photoKey: '',
+                        photoURL: picture,
+                    },
+                    isEmailConfirmed: true,
+            };
 
-    try {
-        sendConfirmationEmail(user)
-        res.status(201).send({ user, "message": "verification email has been sent" })
-    } catch (e) {
-        res.status(400).send({"message": "Email failed to send"})
-    }
-})
-
-
-// Request new verification email loggedin user -- (Tested)(mail)
-router.post('/requestverificationloggedin', auth, async (req, res) => {
-    const user = req.user
-
-    if (!user) {
-        return res.status(404).send({ "message": "there is no such user, please signup" })
-    } if (user.isEmailConfirmed) {
-        return res.status(400).send({ "message": "Email is already verified" })
-    }
-
-    try {
-        sendConfirmationEmail(user)
-        res.status(201).send({ user, "message": "verification email has been sent" })
-    } catch (e) {
-        res.status(401).send({"message": "Email failed to send"})
-    }
-})
-
-
-// Confirming an email -- (Tested)
-router.get('/confirmation/:token', async (req, res) => {
-    try {
-        token = req.params.token
-
-        const verifyToken = jwt.verify(token, process.env.JWT_SECRET_KEY)
-        const user = await User.findById(verifyToken._id)
-
-        if (user.isEmailConfirmed==true) {
-            return res.status(200).send({"message": "Email has been verified"})
+            // Save the new user
+            user = await userService.createUser(newUser);
         }
 
-        user.isEmailConfirmed=true
-        await user.save()
-        res.status(201).send({"message": "Email has been verified"})
+        // Generate an authentication token using authService
+        const token = await authService.generateAuthToken(user);
+        res.status(200).send({ user, token, message: 'User logged in with Google' });
+    } catch (e) {
+        res.status(401).send({ message: 'Something went wrong with Google authentication' });
+    }
+});
+
+
+// Request a new verification email
+router.post('/request-verification-email', async (req, res) => {
+    try {
+        // Find the user by their email address
+        const user = await userService.getUserByEmail(req.body.email);
+
+        if (!user) {
+            // If the user doesn't exist, return an error
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        if (user.isEmailConfirmed) {
+            // If the user's email is already confirmed, return a message
+            return res.status(200).send({ message: 'Email is already confirmed' });
+        }
+
+        // Send a confirmation email using the emailService
+        emailService.sendConfirmationEmail(user);
+        res.status(200).send({ message: 'Verification email sent' });
+    } catch (e) {
+        res.status(500).send({ message: 'Something went wrong' });
+    }
+});
+
+
+// Request new verification email for logged-in user
+router.post('/request-verification-email-logged-in', auth, async (req, res) => {
+    try {
+        // Contains the logged-in user information (populated by 'auth' middleware)
+        const user = req.user;
+
+        // Check if the user's email is already confirmed
+        if (user.isEmailConfirmed) {
+            return res.status(400).send({ message: 'Email is already confirmed' });
+        }
+
+        // Send a new confirmation email using the emailService
+        emailService.sendConfirmationEmail(user);
+        res.status(200).send({ message: 'Verification email sent' });
+
+    } catch (e) {
+        res.status(500).send({ message: 'Something went wrong' });
+    }
+});
+
+
+// Confirming an email
+router.get('/confirm-email/:token', async (req, res) => {
+    try {
+        const token = req.params.token;
+
+        // Verify the email confirmation token
+        const decoded = jwt.verify(token, process.env.EMAIL_CONFIRM_SECRET_KEY)
+        const user = await User.findOne({ _id: decoded._id, emailConfirmToken: token });
+
+        if (!user) {
+            return res.status(404).send({ message: 'Token not found or expired' });
+        }
+
+        // Update the user's email confirmation status
+        user.isEmailConfirmed = true;
+        user.emailConfirmToken = null;
+        await user.save();
+        
+        res.status(200).send({ message: 'Email confirmed successfully' });
     } catch (e) {
         res.status(400).send({ "message": "Email failed to verify" })
     }
 })
 
 
-// Reset password in case you forget a password -- (Tested) (mail)
-router.post('/resetpassword', async (req, res) => {
-    const user = await User.findOne({ email: req.body.email })
-
-    if (!user) {
-        return res.status(401).send({ "message": "email doesnt exist, please signup" })
-    }
-
+// Request password reset email
+router.post('/password-reset', async (req, res) => {
     try {
-        sendPasswordResetEmail(user)
-        res.status(201).send({ user, "message": "password reset email sent" })
-    } catch (e) {
-        res.status(400).send({ "message": "failed to send reset email, please try again" })
-    }
-})
-
-
-// Reset password change -- (Tested)
-router.post('/resetpassword/:token', async (req, res) => {
-    try {
-        const oldtoken = req.params.token
-        newpassword = req.body.password
-        const verifyToken = jwt.verify(oldtoken, process.env.JWT_SECRET_KEY)
-        const user = await User.findById(verifyToken._id)
+        const email = req.body.email;
+        const user = await userService.getUserByEmail(email);
 
         if (!user) {
-            return res.status(401).send({"message": "The token may have expired, please reapply for password reset"})
+            return res.status(404).send({ message: 'User not found' });
         }
 
-        user.password=newpassword
-        user.tokens = []
-        await user.save()
-        const token = await user.generateAuthToken()
-        res.status(201).send({ user, token, "message": "Password successfully reset" })
+        const resetToken = authService.generatePasswordResetToken(user);
+        await userService.savePasswordResetToken(user, resetToken);
+
+        emailService.sendPasswordResetEmail(user, resetToken);
+        res.status(200).send({ message: 'Password reset email sent' });
     } catch (e) {
-        res.status(400).send({ "message": "Failed to reset password" })
+        res.status(500).send({ message: 'Something went wrong' });
     }
 })
 
 
-// Login a user -- (Tested)
+// Reset password
+router.post('/reset-password/:resetToken', async (req, res) => {
+    try {
+        const resetToken = req.params.resetToken;
+        const newPassword = req.body.newPassword;
+        
+        const decoded = authService.verifyPasswordResetToken(resetToken);
+        const user = await userService.findUserById(decoded._id);
+
+        if (!user) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        await userService.updateUserPassword(user, newPassword);
+        res.status(200).send({ message: 'Password updated successfully' });
+    } catch (e) {
+        res.status(500).send({ message: 'Something went wrong' });
+    }
+})
+
+
+// Login a user
 router.post('/login', async (req, res) => {
     try {
-        const user = await User.findByCredentials(req.body.email, req.body.password)
-        if (!user.isActive) {
-            return res.status(400).send({"message": "Your account has been deativated, please contact us if you have an issue"})
+        const { email, password } = req.body;
+        const user = await userService.findByCredentials(email, password);
+        
+        if (!user) {
+            return res.status(401).send({ message: 'Invalid email or password' });
         }
-        const token = await user.generateAuthToken()
-        res.status(200).send({ user, token })
+        
+        const token = await authService.generateAuthToken(user);
+        res.status(200).send({ user, token, message: 'User logged in successfully' });
     } catch (e) {
-        res.status(401).send({ "message": "Failed to log in" })
+        res.status(500).send({ message: 'Something went wrong' });
     }
 })
 
 
-// Log out a user -- (Tested)
+// Log out a user by removing the current authentication token.
 router.post('/logout', auth, async (req, res) => {
     try {
         req.user.tokens = req.user.tokens.filter((token) => {
-            return token.token !== req.token
-        })
-        await req.user.save()
-
-        res.status(204).send({ "message": "Successfully logged out" })
+            return token.token !== req.token;
+        });
+        await req.user.save();
+        res.status(200).send({ message: 'User logged out' });
     } catch (e) {
-        res.status(401).send({ "message": "Failed to log out" })
+        res.status(500).send({ message: 'Something went wrong' })
     }
 })
 
 
-// Logged Out of all of a user's devices -- (Tested)
-router.post('/logoutall', auth, async (req, res) => {
+// Log out a user from all devices by removing all authentication tokens
+router.post('/logout-all', auth, async (req, res) => {
     try {
         req.user.tokens = []
         await req.user.save()
-
-        res.status(200).send({ "message": "Successfully logged out" })
+        res.status(200).send({ message: 'User logged out from all devices' });
     } catch (e) {
-        res.status(400).send({ "message": "Failed to log out" })
+        res.status(500).send({ message: 'Something went wrong' });
     }
 })
 
 
-// Get logged in users profile -- (Tested)
+// Get the profile of the currently logged-in user
 router.get('/me', auth, async (req, res) => {
     try {
-        res.status(200).send(req.user)
+        res.status(200).send(req.user);
     } catch (error) {
-        res.status(400).send({ "message": "Please log in or try again" })
+        res.status(500).send({ message: 'Something went wrong' });
     }
 })
 
@@ -295,4 +312,20 @@ router.get('/users/:id', async (req, res) => {
 })
 
 
+
+
+// Initialize Google OAuth2 client
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const client = new OAuth2Client(CLIENT_ID);
+
+// Define an async function to verify the Google token
+const verifyGoogleToken = async (idToken) => {
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: CLIENT_ID,
+  });
+  return ticket.getPayload();
+};
+
+// Export the router
 module.exports = router
