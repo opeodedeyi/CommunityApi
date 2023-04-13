@@ -3,7 +3,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
-const { s3 } = require('../middleware/aws');
+const { uploadToS3 } = require('../services/s3Service');
 
 // Import services
 const userService = require('../services/userService');

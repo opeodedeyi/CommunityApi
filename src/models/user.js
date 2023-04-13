@@ -97,19 +97,10 @@ const userSchema = new mongoose.Schema({
     timestamps: true
 })
 
+
 // Create a text index for the fullname field
 userSchema.index({ fullname: 'text' });
 
-// Method to generate a new authentication token
-// userSchema.methods.generateAuthToken = async function () {
-//     const user = this
-//     const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET_KEY)
-
-//     user.tokens = user.tokens.concat({ token })
-//     await user.save()
-
-//     return token
-// }
 
 // Custom toJSON method to remove sensitive fields from the output
 userSchema.methods.toJSON = function () {
@@ -122,22 +113,6 @@ userSchema.methods.toJSON = function () {
     return userObject
 }
 
-// Static method to find a user by email and password
-// userSchema.statics.findByCredentials = async (email, password) => {
-//     const user = await User.findOne({ email })
-
-//     if (!user) {
-//         throw new Error('Unable to login')
-//     }
-
-//     const isMatch = await bcrypt.compare(password, user.password)
-
-//     if (!isMatch) {
-//         throw new Error('Unable to login')
-//     }
-
-//     return user
-// }
 
 // Middleware to hash the password before saving the user
 userSchema.pre('save', async function (next) {
