@@ -245,71 +245,69 @@ router.get('/me', auth, async (req, res) => {
 })
 
 
-// Change users password -- (Tested)
-router.patch('/me/password', auth, async (req, res) => {
-    const user = req.user
-    const oldPassword = req.body.oldPassword
-    const newPassword = req.body.password
+// Change the password of the currently logged-in user
+router.patch('/me/change-password', auth, async (req, res) => {
     try {
-        const isMatch = await bcrypt.compare(oldPassword, user.password)
+        const currentPassword = req.body.currentPassword;
+        const newPassword = req.body.newPassword;
+
+        // Check if the current password is correct
+        const isMatch = await userService.comparePasswords(req.user, currentPassword);
+
         if (!isMatch) {
-            return res.status(400).send({ "message": "Wrong old password" })
+            return res.status(400).send({ message: 'Current password is incorrect' });
         }
-        req.user.password = newPassword
-        req.user.tokens = []
-        await req.user.save()
-        const token = await user.generateAuthToken()
-        res.status(200).send({ user, token, "message": "password has been changed" })
+
+        // Update the user's password
+        await userService.updateUserPassword(req.user, newPassword);
+        res.status(200).send({ message: 'Password updated successfully' });
     } catch (e) {
-        res.status(400).send({ "message": "The password failed to change" })
+        res.status(500).send({ message: 'Something went wrong' }); 
     }
 })
 
 
 // set a display picture of the user -- (Tested)
-router.patch('/me/avatar', auth, async (req, res) => {
+router.post('/me/profile-photo', auth, express.json({ limit: '10mb' }), async (req, res) => {
     try {
-        const key = req.user.profilePhoto.key
-        const providedphoto = req.body.location
-        const providedkey = req.body.key
+        const user = req.user;
+        const imageData = req.body.imageData;
         
-        var params = {
-            Bucket: process.env.AWS_BUCKET_NAME,
-            Key: key
-        };
-        
-        if (key) {
-            await s3.deleteObject(params).promise()
+        if (!imageData) {
+            return res.status(400).send({ message: 'No image data provided' });
         }
+
+        const buffer = Buffer.from(imageData, 'base64');
+        const key = `profile-photos/${user._id}-${Date.now()}.jpg`;
         
-        if (!providedphoto || !providedkey) {
-            return res.status(400).send({ "message": "something went wrong", "developer": "you need to provide a key and location" })
+        try {
+            const data = await uploadToS3(buffer, key, 'image/jpeg');
+            const updatedUser = await userService.setProfilePhoto(user, data);
+            res.status(200).send({ updatedUser, message: 'Profile photo updated' });
+        } catch (err) {
+            res.status(500).send({ message: 'Something went wrong' });
         }
-        
-        req.user.profilePhoto.location = providedphoto
-        req.user.profilePhoto.key = providedkey
-        await req.user.save()
-        res.status(200).send({ "message": "Successfully updated" })
-    } catch(error) {
-        return res.status(400).send({ error, "message": "Something went wrong" })
+
+    } catch(e) {
+        res.status(500).send({ message: 'Something went wrong' });
     }
 })
 
 
-// Getting a specific user details -- (Tested)
-router.get('/users/:id', async (req, res) => {
-    const _id = req.params.id
-
+// Get the details of a specific user by their ID
+router.get('/users/:id', auth, async (req, res) => {
     try {
-        const user = await User.findById(_id)
+        const user = await userService.findUserById(req.params.id);
+        
         if (!user) {
-            return res.status(404).send()
+            return res.status(404).send({ message: 'User not found' });
         }
-        res.status(200).send(user)
+        
+        res.send(user);
     } catch (e) {
-        res.status(400).send({ "message": "failed to get user, please try again" })
+        res.status(500).send({ message: 'Something went wrong' });
     }
-})
+});
 
 
 

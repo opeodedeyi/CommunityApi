@@ -1,4 +1,5 @@
 const User = require('../models/user');
+const bcrypt = require('bcryptjs');
 
 
 /**
@@ -112,6 +113,34 @@ async function updateUserPassword(user, newPassword) {
 }
 
 
+/**
+ * Compare the provided password with the hashed password stored for the user.
+ *
+ * @param {Object} user - The user object.
+ * @param {String} password - The password to compare.
+ * @returns {Boolean} - True if the passwords match, false otherwise.
+ */
+async function comparePasswords(user, password) {
+    const isMatch = await bcrypt.compare(password, user.password);
+    return isMatch;
+}
+
+
+/**
+ * Set the profile photo of the user.
+ *
+ * @param {Object} user - The user object.
+ * @param {Object} s3Data - The S3 data object containing the key and location of the uploaded file.
+ * @returns {Promise<Object>} - Returns a promise that resolves to the updated user object.
+ */
+const setProfilePhoto = async (user, s3Data) => {
+    user.profilePhoto.key = s3Data.Key;
+    user.profilePhoto.location = s3Data.Location;
+    await user.save();
+    return user;
+};
+
+
 module.exports = {
     createUser,
     findUserById,
@@ -119,5 +148,7 @@ module.exports = {
     getUserByEmail,
     updateUser,
     savePasswordResetToken,
-    updateUserPassword
+    updateUserPassword,
+    comparePasswords,
+    setProfilePhoto
 };
