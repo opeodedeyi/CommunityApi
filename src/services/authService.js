@@ -56,31 +56,6 @@ function generatePasswordResetToken(user) {
 
 
 /**
- * Find a user by their email and password.
- *
- * @param {string} email - The user's email address.
- * @param {string} password - The user's password.
- * @returns {Promise<Object>} A promise that resolves to the user object if the credentials are valid.
- * @throws {Error} If the email or password is incorrect.
- */
-async function findByCredentials(email, password) {
-    const user = await User.findOne({ email });
-
-    if (!user) {
-        throw new Error('Unable to log in');
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-        throw new Error('Unable to log in');
-    }
-
-    return user;
-}
-
-
-/**
  * Verify the password reset token.
  *
  * @param {string} token - The password reset token to be verified.
@@ -102,6 +77,5 @@ module.exports = {
     generateAuthToken,
     generateEmailConfirmToken,
     generatePasswordResetToken,
-    findByCredentials,
     verifyPasswordResetToken
 };

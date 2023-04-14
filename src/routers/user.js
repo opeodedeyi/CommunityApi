@@ -3,12 +3,15 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
-const { uploadToS3 } = require('../services/s3Service');
 
 // Import services
 const userService = require('../services/userService');
 const authService = require('../services/authService');
 const emailService = require('../services/emailService');
+const { uploadToS3 } = require('../services/s3Service');
+
+// Import Middleware
+const auth = require('../middleware/auth');
 
 // Create a router
 const router = new express.Router();
