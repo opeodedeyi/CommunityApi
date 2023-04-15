@@ -59,4 +59,22 @@ router.delete('/category/:id', auth, adminUser, async (req, res) => {
 });
 
 
+/**
+ * Route for getting all categories.
+ * This route does not require authentication.
+ *
+ * @route GET /categories
+ * @returns {Array<Category>} 200 - An array of all categories in the database
+ * @returns {Object} 500 - Server error with an error message
+ */
+router.get('/category', async (req, res) => {
+    try {
+        const categories = await Category.find({});
+        res.status(200).send(categories);
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
+
+
 module.exports = router;

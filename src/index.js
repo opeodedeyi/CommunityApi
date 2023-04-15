@@ -1,17 +1,31 @@
+// Import required packages
 const express = require('express')
 require('./db/mongoose')
 require('dotenv').config()
 var cors = require('cors')
 const app = express()
 
-const userRouter = require('./routers/user')
 
+// Initialize the Express app
+const userRouter = require('./routers/user')
+const categoryRouter = require('./routers/category');
+
+
+// Set the port for the server, either from the environment variable or default to 4000
 const port = process.env.PORT || 4000
 
-app.use(cors())
-app.use(express.json())
-app.use(userRouter)
 
+// Middleware for handling CORS (Cross-Origin Resource Sharing) headers
+app.use(cors())
+
+// Middleware to parse incoming JSON data in request body
+app.use(express.json())
+
+// Register routers with the app
+app.use(userRouter)
+app.use(categoryRouter);
+
+// Start the server on the specified port
 app.listen(port, () => {
     console.log(`Server is up on port ${port}`);
 })
