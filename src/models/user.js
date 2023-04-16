@@ -16,6 +16,7 @@ require('dotenv').config()
  * @property {string} password - The user's password.
  * @property {string} gender - The user's gender.
  * @property {Array} interests - An array of category IDs representing the user's interests.
+ * @property {Array} moderatorInvitations - An array of group IDs representing the moderator request to the user.
  * @property {Object} profilePhoto - An object containing the key and location of the user's profile photo.
  * @property {boolean} isEmailConfirmed - Indicates if the user's email is confirmed.
  * @property {boolean} isVerified - Indicates if the user is verified.
@@ -90,7 +91,19 @@ const userSchema = new mongoose.Schema({
         }],
         default: [],
         required: false
-    },    
+    },
+    moderatorInvitations: [
+        {
+            group: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Group',
+            },
+            sentAt: {
+                type: Date,
+                default: Date.now,
+            },
+        },
+    ],
     profilePhoto: {
         key: {
             type: String,

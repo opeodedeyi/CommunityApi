@@ -75,15 +75,15 @@ const groupSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         required: true,
         ref: 'Category',
-    },    
-    members: [
+    },
+    moderators: [
         {
             type: mongoose.Schema.Types.ObjectId,
             required: false,
             ref: 'User',
         },
     ],
-    moderators: [
+    members: [
         {
             type: mongoose.Schema.Types.ObjectId,
             required: false,
@@ -94,6 +94,12 @@ const groupSchema = new mongoose.Schema({
         {
             type: mongoose.Schema.Types.ObjectId,
             required: false,
+            ref: 'User',
+        },
+    ],
+    bannedUsers: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
         },
     ],
