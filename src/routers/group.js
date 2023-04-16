@@ -522,4 +522,86 @@ router.post('/group/:id/unban-user/:userId', auth, isEmailConfirmed, async (req,
 });
 
 
+/**
+ * @api {post} /group/:id/accept-moderator-invitation Accept a moderator invitation
+ * @apiName AcceptModeratorInvitation
+ * @apiGroup Group
+ * @apiPermission user
+ *
+ * @apiHeader {String} Authorization Bearer token containing the user's access token.
+ *
+ * @apiParam (URL Params) {String} id The ID of the group.
+ *
+ * @apiSuccess (200) {Object} group The updated group with the user as a moderator.
+ *
+ * @apiError (400) {Object} error An error message if the user does not have a moderator invitation.
+ * @apiError (404) {Object} error An error message if the group is not found.
+ * @apiError (500) {Object} error An error message if a server error occurs.
+ */
+router.post('/group/:id/accept-moderator-invitation', auth, isEmailConfirmed, async (req, res) => {
+    try {
+        const groupId = req.params.id;
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).send({ error: 'Group not found' });
+        }
+
+        const userId = req.user._id;
+        const invitationIndex = req.user.moderatorInvitations.findIndex((invitation) => invitation.group.equals(groupId));
+
+        if (invitationIndex === -1) {
+            return res.status(400).send({ error: 'You do not have an invitation to become a moderator for this group' });
+        }
+
+        req.user.moderatorInvitations.splice(invitationIndex, 1);
+        group.moderators.push(userId);
+
+        await group.save();
+        await req.user.save();
+
+        res.status(200).send(group);
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
+
+
+/**
+ * @route POST /group/:id/reject-moderator-invitation
+ * @desc Allows a user to reject a moderator invitation for a group
+ * @access Private
+ *
+ * @param {string} id - The ID of the group
+ *
+ * @returns {object} - A success message indicating the moderator invitation was rejected
+ * @throws {Error} - If the group is not found or the user doesn't have a moderator invitation for the group
+ */
+router.post('/group/:id/reject-moderator-invitation', auth, isEmailConfirmed, async (req, res) => {
+    try {
+        const groupId = req.params.id;
+        const group = await Group.findById(groupId);
+
+        if (!group) {
+            return res.status(404).send({ error: 'Group not found' });
+        }
+
+        const userId = req.user._id;
+        const invitationIndex = req.user.moderatorInvitations.findIndex((invitation) => invitation.group.equals(groupId));
+
+        if (invitationIndex === -1) {
+            return res.status(400).send({ error: 'You do not have an invitation to become a moderator for this group' });
+        }
+
+        req.user.moderatorInvitations.splice(invitationIndex, 1);
+
+        await req.user.save();
+
+        res.status(200).send({ message: 'Moderator invitation rejected' });
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
+
+
 module.exports = router;

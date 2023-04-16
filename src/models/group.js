@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 
+
 /**
  * Group schema representing social clubs.
  *
