@@ -1,5 +1,5 @@
 const express = require('express');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const isEmailConfirmed = require('../middleware/isEmailConfirmed');
 const Group = require('../models/group');
 const User = require('../models/user');

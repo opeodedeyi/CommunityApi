@@ -2,7 +2,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { OAuth2Client } = require('google-auth-library');
 
 // Import services
 const userService = require('../services/userService');
@@ -11,13 +10,18 @@ const emailService = require('../services/emailService');
 const { uploadToS3 } = require('../services/s3Service');
 
 // Import Middleware
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Create a router
 const router = new express.Router();
 
 
-// Lookaam API homepage -- (Tested)
+/**
+ * Get the welcome message for the API
+ * @route GET /
+ * @returns {Object} 201 - A success status and a welcome message
+ * @returns {Object} 400 - A bad request status and an error message
+ */
 router.get('', async (req, res) => {
     try {
         res.status(201).send({"message": "Welcome to community api"})
@@ -27,7 +31,13 @@ router.get('', async (req, res) => {
 })
 
 
-// Signup a normal user
+/**
+ * Sign up a new user
+ * @route POST /signup
+ * @param {Object} req.body - The user data for sign up
+ * @returns {Object} 201 - A success status, the new user object, the token, and a success message
+ * @returns {Object} 401 - An unauthorized status and an error message
+ */
 router.post('/signup', async (req, res) => {
     // Use the userService to create a new user
     try {
@@ -43,20 +53,23 @@ router.post('/signup', async (req, res) => {
 });
 
 
-// Route for Google OAuth
+/**
+ * Authenticate a user with Google
+ * @route POST /google-auth
+ * @param {Object} req.body - The request body containing the Google ID token
+ * @returns {Object} 200 - A success status, the user object, the token, and a success message
+ * @returns {Object} 401 - An unauthorized status and an error message
+ */
 router.post('/google-auth', async (req, res) => {
     try {
         // Verify the Google token
         const payload = await verifyGoogleToken(req.body.idToken);
-
         // Extract user information from the payload
         const { email, given_name, family_name, picture } = payload;
-
         // Check if the user already exists in the database
         let user = await userService.getUserByEmail(email);
 
         if (!user) {
-            // If the user doesn't exist, create a new user with the information from the payload
             const newUser = {
                 email,
                     fullName: `${given_name} ${family_name}`,
@@ -68,11 +81,9 @@ router.post('/google-auth', async (req, res) => {
                     isEmailConfirmed: true,
             };
 
-            // Save the new user
             user = await userService.createUser(newUser);
         }
 
-        // Generate an authentication token using authService
         const token = await authService.generateAuthToken(user);
         res.status(200).send({ user, token, message: 'User logged in with Google' });
     } catch (e) {
@@ -81,23 +92,26 @@ router.post('/google-auth', async (req, res) => {
 });
 
 
-// Request a new verification email
+/**
+ * Request a new verification email (for logged-out users)
+ * @route POST /request-verification-email
+ * @param {Object} req.body - The request body containing the user's email address
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 404 - A not found status and an error message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/request-verification-email', async (req, res) => {
     try {
-        // Find the user by their email address
         const user = await userService.getUserByEmail(req.body.email);
 
         if (!user) {
-            // If the user doesn't exist, return an error
             return res.status(404).send({ message: 'User not found' });
         }
 
         if (user.isEmailConfirmed) {
-            // If the user's email is already confirmed, return a message
             return res.status(200).send({ message: 'Email is already confirmed' });
         }
 
-        // Send a confirmation email using the emailService
         emailService.sendConfirmationEmail(user);
         res.status(200).send({ message: 'Verification email sent' });
     } catch (e) {
@@ -106,18 +120,23 @@ router.post('/request-verification-email', async (req, res) => {
 });
 
 
-// Request new verification email for logged-in user
+/**
+ * Request a new verification email (for logged-in users)
+ * @route POST /request-verification-email-logged-in
+ * @middleware auth - The authentication middleware
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 400 - A bad request status and an error message
+ * @returns {Object} 401 - An unauthorized status and an error message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/request-verification-email-logged-in', auth, async (req, res) => {
     try {
-        // Contains the logged-in user information (populated by 'auth' middleware)
         const user = req.user;
 
-        // Check if the user's email is already confirmed
         if (user.isEmailConfirmed) {
             return res.status(400).send({ message: 'Email is already confirmed' });
         }
 
-        // Send a new confirmation email using the emailService
         emailService.sendConfirmationEmail(user);
         res.status(200).send({ message: 'Verification email sent' });
 
@@ -127,7 +146,14 @@ router.post('/request-verification-email-logged-in', auth, async (req, res) => {
 });
 
 
-// Confirming an email
+/**
+ * Confirm a user's email address
+ * @route GET /confirm-email/:token
+ * @param {string} req.params.token - The email confirmation token
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 400 - A bad request status and an error message
+ * @returns {Object} 404 - A not found status and an error message
+ */
 router.get('/confirm-email/:token', async (req, res) => {
     try {
         const token = req.params.token;
@@ -152,7 +178,13 @@ router.get('/confirm-email/:token', async (req, res) => {
 })
 
 
-// Request password reset email
+/**
+ * Request a password reset email
+ * @route POST /password-reset
+ * @param {Object} req.body - The request body containing the user's email address
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/password-reset', async (req, res) => {
     try {
         const email = req.body.email;
@@ -173,7 +205,14 @@ router.post('/password-reset', async (req, res) => {
 })
 
 
-// Reset password
+/**
+ * Reset a user's password
+ * @route POST /reset-password/:resetToken
+ * @param {string} req.params.resetToken - The password reset token
+ * @param {Object} req.body - The request body containing the new password
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/reset-password/:resetToken', async (req, res) => {
     try {
         const resetToken = req.params.resetToken;
@@ -194,7 +233,13 @@ router.post('/reset-password/:resetToken', async (req, res) => {
 })
 
 
-// Login a user
+/**
+ * Log in a user
+ * @route POST /login
+ * @param {Object} req.body - The request body containing the user's email and password
+ * @returns {Object} 200 - A success status, the user object, the token, and a success message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -212,7 +257,13 @@ router.post('/login', async (req, res) => {
 })
 
 
-// Log out a user by removing the current authentication token.
+/**
+ * Log out a user by removing the current authentication token
+ * @route POST /logout
+ * @middleware auth - The authentication middleware
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/logout', auth, async (req, res) => {
     try {
         req.user.tokens = req.user.tokens.filter((token) => {
@@ -226,7 +277,13 @@ router.post('/logout', auth, async (req, res) => {
 })
 
 
-// Log out a user from all devices by removing all authentication tokens
+/**
+ * Log out a user from all devices by removing all authentication tokens
+ * @route POST /logout-all
+ * @middleware auth - The authentication middleware
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/logout-all', auth, async (req, res) => {
     try {
         req.user.tokens = []
@@ -238,7 +295,13 @@ router.post('/logout-all', auth, async (req, res) => {
 })
 
 
-// Get the profile of the currently logged-in user
+/**
+ * Get the profile of the currently logged-in user
+ * @route GET /me
+ * @middleware auth - The authentication middleware
+ * @returns {Object} 200 - A success status and the user object
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.get('/me', auth, async (req, res) => {
     try {
         res.status(200).send(req.user);
@@ -248,7 +311,15 @@ router.get('/me', auth, async (req, res) => {
 })
 
 
-// Change the password of the currently logged-in user
+/**
+ * Change the password of the currently logged-in user
+ * @route PATCH /me/change-password
+ * @middleware auth - The authentication middleware
+ * @param {Object} req.body - The request body containing the current and new passwords
+ * @returns {Object} 200 - A success status and a success message
+ * @returns {Object} 400 - A bad request status and an error message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.patch('/me/change-password', auth, async (req, res) => {
     try {
         const currentPassword = req.body.currentPassword;
@@ -261,7 +332,6 @@ router.patch('/me/change-password', auth, async (req, res) => {
             return res.status(400).send({ message: 'Current password is incorrect' });
         }
 
-        // Update the user's password
         await userService.updateUserPassword(req.user, newPassword);
         res.status(200).send({ message: 'Password updated successfully' });
     } catch (e) {
@@ -270,7 +340,15 @@ router.patch('/me/change-password', auth, async (req, res) => {
 })
 
 
-// set a display picture of the user -- (Tested)
+/**
+ * Set a display picture for the user
+ * @route POST /me/profile-photo
+ * @middleware auth - The authentication middleware
+ * @param {Object} req.body - The request body containing the image data
+ * @returns {Object} 200 - A success status, the updated user object, and a success message
+ * @returns {Object} 400 - A bad request status and an error message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.post('/me/profile-photo', auth, express.json({ limit: '10mb' }), async (req, res) => {
     try {
         const user = req.user;
@@ -297,7 +375,15 @@ router.post('/me/profile-photo', auth, express.json({ limit: '10mb' }), async (r
 })
 
 
-// Get the details of a specific user by their ID
+/**
+ * Get the details of a specific user by their ID
+ * @route GET /users/:id
+ * @middleware auth - The authentication middleware
+ * @param {string} req.params.id - The ID of the user to retrieve
+ * @returns {Object} 200 - A success status and the user object
+ * @returns {Object} 404 - A not found status and an error message
+ * @returns {Object} 500 - An internal server error status and an error message
+ */
 router.get('/users/:id', auth, async (req, res) => {
     try {
         const user = await userService.findUserById(req.params.id);

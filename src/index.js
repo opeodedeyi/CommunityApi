@@ -9,6 +9,8 @@ const app = express()
 // Initialize the Express app
 const userRouter = require('./routers/user')
 const categoryRouter = require('./routers/category');
+const groupRouter = require('./routers/group')
+const commentRouter = require('./routers/comment')
 
 
 // Set the port for the server, either from the environment variable or default to 4000
@@ -24,6 +26,8 @@ app.use(express.json())
 // Register routers with the app
 app.use(userRouter)
 app.use(categoryRouter);
+app.use(groupRouter);
+app.use(commentRouter);
 
 // Start the server on the specified port
 app.listen(port, () => {

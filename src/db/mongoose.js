@@ -13,7 +13,6 @@ mongoose.set('strictQuery', false);
 mongoose.connect(URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  useCreateIndex: true, //Newly added line
 });
 
 // Log a message when Mongoose successfully connects to the database
