@@ -313,20 +313,47 @@ router.get('/users/:id', auth, async (req, res) => {
 });
 
 
+/**
+ * @api {get} /users/search Search for a user by email or fullname
+ * @apiName SearchUser
+ * @apiGroup User
+ * @apiVersion 1.0.0
+ *
+ * @apiParam {String} query Search query for email or fullname.
+ * @apiParam {Number} [page=1] Page number for paginated results.
+ * @apiParam {Number} [limit=10] Number of results per page.
+ *
+ * @apiSuccess {Object[]} users List of users matching the search query.
+ * @apiSuccess {Number} totalPages Total number of pages available.
+ *
+ * @apiError (Error 500) {String} error 'Server error'.
+ */
+router.get('/users/search', async (req, res) => {
+    const query = req.query.query || '';
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
 
+    const regex = new RegExp(query, 'i');
 
-// Initialize Google OAuth2 client
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const client = new OAuth2Client(CLIENT_ID);
+    try {
+        const users = await User.find({
+            $or: [{ email: regex }, { fullname: regex }],
+        })
+            .skip((page - 1) * limit)
+            .limit(limit);
 
-// Define an async function to verify the Google token
-const verifyGoogleToken = async (idToken) => {
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: CLIENT_ID,
-  });
-  return ticket.getPayload();
-};
+        const count = await User.countDocuments({
+            $or: [{ email: regex }, { fullname: regex }],
+        });
+
+        const totalPages = Math.ceil(count / limit);
+
+        res.status(200).send({ users, totalPages });
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
+
 
 // Export the router
 module.exports = router

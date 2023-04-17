@@ -198,4 +198,83 @@ router.delete('/admin-delete-comment/:commentId', auth, async (req, res) => {
 });
 
 
+/**
+ * @api {get} /group/:groupId/comments Get all comments for a group
+ * @apiName GetGroupComments
+ * @apiGroup Comment
+ * @apiVersion 1.0.0
+ *
+ * @apiParam {String} groupId Group's unique ID.
+ * @apiParam {Number} [page=1] Page number for pagination.
+ * @apiParam {Number} [limit=10] Number of comments per page.
+ * @apiParam {String} [sortBy=createdAt] Field to sort comments by.
+ * @apiParam {String} [order=desc] Sorting order ('asc' or 'desc').
+ *
+ * @apiSuccess {Object[]} comments List of comments.
+ *
+ * @apiError (Error 404) {String} error 'Group not found'.
+ * @apiError (Error 500) {String} error 'Server error'.
+ */
+router.get('/group/:groupId/comments', async (req, res) => {
+    const groupId = req.params.groupId;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const order = req.query.order === 'asc' ? 1 : -1;
+
+    try {
+        const group = await Group.findById(groupId);
+        if (!group) {
+            return res.status(404).send({ error: 'Group not found' });
+        }
+
+        const comments = await Comment.find({ targetType: 'Group', targetId: groupId })
+            .sort({ [sortBy]: order })
+            .skip((page - 1) * limit)
+            .limit(limit);
+
+        res.status(200).send(comments);
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
+
+
+/**
+ * @api {get} /comment/:commentId/replies Get all replies for a comment
+ * @apiName GetCommentReplies
+ * @apiGroup Comment
+ * @apiVersion 1.0.0
+ *
+ * @apiParam {String} commentId Comment's unique ID.
+ * @apiParam {Number} [page=1] Page number for pagination.
+ * @apiParam {Number} [limit=10] Number of replies per page.
+ *
+ * @apiSuccess {Object[]} replies List of replies.
+ *
+ * @apiError (Error 404) {String} error 'Comment not found'.
+ * @apiError (Error 500) {String} error 'Server error'.
+ */
+router.get('/comment/:commentId/replies', async (req, res) => {
+    const commentId = req.params.commentId;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    try {
+        const comment = await Comment.findById(commentId);
+        if (!comment) {
+            return res.status(404).send({ error: 'Comment not found' });
+        }
+
+        const replies = await Comment.find({ targetType: 'Comment', targetId: commentId })
+            .skip((page - 1) * limit)
+            .limit(limit);
+
+        res.status(200).send(replies);
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
+
+
 module.exports = router;
