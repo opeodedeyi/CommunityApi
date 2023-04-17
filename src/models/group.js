@@ -119,6 +119,9 @@ const groupSchema = new mongoose.Schema({
 });
 
 
+// Add a 2dsphere index for the location.geo field
+groupSchema.index({ 'location.geo': '2dsphere' });
+
 // Create the Group model using the group schema
 const Group = mongoose.model('Group', groupSchema);
 
