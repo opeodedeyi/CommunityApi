@@ -82,6 +82,7 @@ const userSchema = new mongoose.Schema({
     gender: {
         type: String,
         enum: ['male', 'female', 'non-binary', 'prefer not to say', 'other'],
+        default: 'prefer not to say',
         required: false,
         set: (value) => value.toLowerCase(), // Convert the input to lowercase
     },

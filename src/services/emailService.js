@@ -15,7 +15,8 @@ require('dotenv').config()
  */
 function sendConfirmationEmail(user) {
     const token = authService.generateEmailConfirmToken(user);
-
+    user.emailConfirmToken = token;
+    user.save();
     const emailOptions = {
         to: user.email,
         subject: 'Email Confirmation',

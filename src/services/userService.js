@@ -41,17 +41,15 @@ async function findUserById(userId) {
  */
 async function findByCredentials(email, password) {
     const user = await User.findOne({ email }).select('+password');
-
     if (!user) {
         throw new Error('Invalid email or password');
     }
 
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await comparePasswords(user, password)
 
     if (!isMatch) {
-        throw new Error('Invalid email or password');
+        throw new Error('Invalid password');
     }
-
     return user;
 }
 

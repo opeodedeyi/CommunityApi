@@ -3,11 +3,15 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
+// Import module
+const User = require('../models/user');
+
 // Import services
 const userService = require('../services/userService');
 const authService = require('../services/authService');
 const emailService = require('../services/emailService');
 const { uploadToS3 } = require('../services/s3Service');
+const { OAuth2Client } = require('google-auth-library');
 
 // Import Middleware
 const { auth } = require('../middleware/auth');
@@ -17,7 +21,7 @@ const router = new express.Router();
 
 
 /**
- * Get the welcome message for the API
+ * Get the welcome message for the API (Tested)
  * @route GET /
  * @returns {Object} 201 - A success status and a welcome message
  * @returns {Object} 400 - A bad request status and an error message
@@ -29,6 +33,48 @@ router.get('', async (req, res) => {
         res.status(400).send({ "message": "Email failed to verify" })
     }
 })
+
+
+/**
+ * @api {get} /find-users Search for a user by email or fullname (Tested)
+ * @apiName SearchUser
+ * @apiGroup User
+ * @apiVersion 1.0.0
+ *
+ * @apiParam {String} query Search query for email or fullname.
+ * @apiParam {Number} [page=1] Page number for paginated results.
+ * @apiParam {Number} [limit=10] Number of results per page.
+ *
+ * @apiSuccess {Object[]} users List of users matching the search query.
+ * @apiSuccess {Number} totalPages Total number of pages available.
+ *
+ * @apiError (Error 500) {String} error 'Server error'.
+ */
+router.get('/find-users', async (req, res) => {
+    const query = req.query.query || '';
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const regex = new RegExp(query, 'i');
+
+    try {
+        const users = await User.find({
+            $or: [{ email: regex }, { fullname: regex }],
+        })
+            .skip((page - 1) * limit)
+            .limit(limit);
+
+        const count = await User.countDocuments({
+            $or: [{ email: regex }, { fullname: regex }],
+        });
+
+        const totalPages = Math.ceil(count / limit);
+
+        res.status(200).send({ users, totalPages });
+    } catch (e) {
+        res.status(500).send({ error: 'Server error' });
+    }
+});
 
 
 /**
@@ -111,7 +157,7 @@ router.post('/request-verification-email', async (req, res) => {
         if (user.isEmailConfirmed) {
             return res.status(200).send({ message: 'Email is already confirmed' });
         }
-
+        
         emailService.sendConfirmationEmail(user);
         res.status(200).send({ message: 'Verification email sent' });
     } catch (e) {
@@ -147,7 +193,7 @@ router.post('/request-verification-email-logged-in', auth, async (req, res) => {
 
 
 /**
- * Confirm a user's email address
+ * Confirm a user's email address (Tested)
  * @route GET /confirm-email/:token
  * @param {string} req.params.token - The email confirmation token
  * @returns {Object} 200 - A success status and a success message
@@ -157,11 +203,16 @@ router.post('/request-verification-email-logged-in', auth, async (req, res) => {
 router.get('/confirm-email/:token', async (req, res) => {
     try {
         const token = req.params.token;
-
+        console.log(token);
         // Verify the email confirmation token
         const decoded = jwt.verify(token, process.env.EMAIL_CONFIRM_SECRET_KEY)
-        const user = await User.findOne({ _id: decoded._id, emailConfirmToken: token });
+        console.log(decoded);
+        
+        const allUsers = await User.find();
+        console.log('All users:', allUsers);
 
+        const user = await User.findOne({ _id: decoded._id, emailConfirmToken: token });
+        console.log(user)
         if (!user) {
             return res.status(404).send({ message: 'Token not found or expired' });
         }
@@ -195,6 +246,7 @@ router.post('/password-reset', async (req, res) => {
         }
 
         const resetToken = authService.generatePasswordResetToken(user);
+        console.log(resetToken);
         await userService.savePasswordResetToken(user, resetToken);
 
         emailService.sendPasswordResetEmail(user, resetToken);
@@ -206,7 +258,7 @@ router.post('/password-reset', async (req, res) => {
 
 
 /**
- * Reset a user's password
+ * Reset a user's password (Tested)
  * @route POST /reset-password/:resetToken
  * @param {string} req.params.resetToken - The password reset token
  * @param {Object} req.body - The request body containing the new password
@@ -234,7 +286,7 @@ router.post('/reset-password/:resetToken', async (req, res) => {
 
 
 /**
- * Log in a user
+ * Log in a user (Tested)
  * @route POST /login
  * @param {Object} req.body - The request body containing the user's email and password
  * @returns {Object} 200 - A success status, the user object, the token, and a success message
@@ -258,7 +310,7 @@ router.post('/login', async (req, res) => {
 
 
 /**
- * Log out a user by removing the current authentication token
+ * Log out a user by removing the current authentication token (Tested)
  * @route POST /logout
  * @middleware auth - The authentication middleware
  * @returns {Object} 200 - A success status and a success message
@@ -278,7 +330,7 @@ router.post('/logout', auth, async (req, res) => {
 
 
 /**
- * Log out a user from all devices by removing all authentication tokens
+ * Log out a user from all devices by removing all authentication tokens (Tested)
  * @route POST /logout-all
  * @middleware auth - The authentication middleware
  * @returns {Object} 200 - A success status and a success message
@@ -296,7 +348,7 @@ router.post('/logout-all', auth, async (req, res) => {
 
 
 /**
- * Get the profile of the currently logged-in user
+ * Get the profile of the currently logged-in user (Tested)
  * @route GET /me
  * @middleware auth - The authentication middleware
  * @returns {Object} 200 - A success status and the user object
@@ -312,7 +364,7 @@ router.get('/me', auth, async (req, res) => {
 
 
 /**
- * Change the password of the currently logged-in user
+ * Change the password of the currently logged-in user (Tested)
  * @route PATCH /me/change-password
  * @middleware auth - The authentication middleware
  * @param {Object} req.body - The request body containing the current and new passwords
@@ -324,7 +376,7 @@ router.patch('/me/change-password', auth, async (req, res) => {
     try {
         const currentPassword = req.body.currentPassword;
         const newPassword = req.body.newPassword;
-
+        
         // Check if the current password is correct
         const isMatch = await userService.comparePasswords(req.user, currentPassword);
 
@@ -376,7 +428,7 @@ router.post('/me/profile-photo', auth, express.json({ limit: '10mb' }), async (r
 
 
 /**
- * Get the details of a specific user by their ID
+ * Get the details of a specific user by their ID (Tested)
  * @route GET /users/:id
  * @middleware auth - The authentication middleware
  * @param {string} req.params.id - The ID of the user to retrieve
@@ -384,7 +436,7 @@ router.post('/me/profile-photo', auth, express.json({ limit: '10mb' }), async (r
  * @returns {Object} 404 - A not found status and an error message
  * @returns {Object} 500 - An internal server error status and an error message
  */
-router.get('/users/:id', auth, async (req, res) => {
+router.get('/users/:id', async (req, res) => {
     try {
         const user = await userService.findUserById(req.params.id);
         
@@ -399,46 +451,19 @@ router.get('/users/:id', auth, async (req, res) => {
 });
 
 
-/**
- * @api {get} /users/search Search for a user by email or fullname
- * @apiName SearchUser
- * @apiGroup User
- * @apiVersion 1.0.0
- *
- * @apiParam {String} query Search query for email or fullname.
- * @apiParam {Number} [page=1] Page number for paginated results.
- * @apiParam {Number} [limit=10] Number of results per page.
- *
- * @apiSuccess {Object[]} users List of users matching the search query.
- * @apiSuccess {Number} totalPages Total number of pages available.
- *
- * @apiError (Error 500) {String} error 'Server error'.
- */
-router.get('/users/search', async (req, res) => {
-    const query = req.query.query || '';
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
 
-    const regex = new RegExp(query, 'i');
+// Initialize Google OAuth2 client
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const client = new OAuth2Client(CLIENT_ID);
 
-    try {
-        const users = await User.find({
-            $or: [{ email: regex }, { fullname: regex }],
-        })
-            .skip((page - 1) * limit)
-            .limit(limit);
-
-        const count = await User.countDocuments({
-            $or: [{ email: regex }, { fullname: regex }],
-        });
-
-        const totalPages = Math.ceil(count / limit);
-
-        res.status(200).send({ users, totalPages });
-    } catch (e) {
-        res.status(500).send({ error: 'Server error' });
-    }
-});
+// Define an async function to verify the Google token
+const verifyGoogleToken = async (idToken) => {
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: CLIENT_ID,
+  });
+  return ticket.getPayload();
+};
 
 
 // Export the router

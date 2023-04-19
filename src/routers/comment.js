@@ -277,4 +277,18 @@ router.get('/comment/:commentId/replies', async (req, res) => {
 });
 
 
+
+// // Initialize Google OAuth2 client
+// const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+// const client = new OAuth2Client(CLIENT_ID);
+
+// // Define an async function to verify the Google token
+// const verifyGoogleToken = async (idToken) => {
+//   const ticket = await client.verifyIdToken({
+//     idToken,
+//     audience: CLIENT_ID,
+//   });
+//   return ticket.getPayload();
+// };
+
 module.exports = router;
